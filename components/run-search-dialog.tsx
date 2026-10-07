@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useEffect, useRef, useState, useTransition } from "react"
 import { SearchIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,40 +15,72 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { ejecutarBusqueda, type BusquedaSummary } from "@/app/actions/expedientes"
+import { iniciarBusqueda, obtenerEstadoEjecucion, type EstadoEjecucion } from "@/app/actions/expedientes"
 import { toast } from "sonner"
 
 function today() {
   return new Date().toISOString().slice(0, 10)
 }
 
+const ESTADOS_FINALES = ["completado", "completado_con_errores", "error"]
+
 export function RunSearchDialog() {
   const [open, setOpen] = useState(false)
   const [desde, setDesde] = useState(today())
   const [hasta, setHasta] = useState(today())
-  const [summary, setSummary] = useState<BusquedaSummary | null>(null)
+  const [summary, setSummary] = useState<EstadoEjecucion | null>(null)
   const [isPending, startTransition] = useTransition()
+  const [isPolling, setIsPolling] = useState(false)
+  const pollTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (pollTimeout.current) clearTimeout(pollTimeout.current)
+    }
+  }, [])
+
+  function pollEstado(ejecucionId: number) {
+    setIsPolling(true)
+    const check = async () => {
+      const estado = await obtenerEstadoEjecucion(ejecucionId)
+      if (!estado) {
+        setIsPolling(false)
+        toast.error("No se encontró el registro de la búsqueda.")
+        return
+      }
+
+      if (!ESTADOS_FINALES.includes(estado.estado)) {
+        pollTimeout.current = setTimeout(check, 3000)
+        return
+      }
+
+      setIsPolling(false)
+      setSummary(estado)
+
+      if (estado.error) {
+        toast.error(estado.error)
+      } else if (estado.fechasConError.length > 0) {
+        toast.warning(
+          `Búsqueda completada con ${estado.fechasConError.length} fecha(s) que no se pudieron revisar. Reintenta esas fechas puntuales.`,
+        )
+      } else {
+        toast.success(
+          `Búsqueda completada: ${estado.publicacionesNuevas} publicaciones nuevas, ${estado.coincidenciasGeneradas} coincidencias generadas.`,
+        )
+      }
+    }
+    check()
+  }
 
   function handleSubmit() {
     startTransition(async () => {
       setSummary(null)
-      const result = await ejecutarBusqueda(desde, hasta)
-      setSummary(result)
-      if (!result.error) {
-        if (result.fechasConError.length > 0) {
-          toast.warning(
-            `Búsqueda completada con ${result.fechasConError.length} fecha(s) que no se pudieron revisar. Reintenta esas fechas puntuales.`,
-          )
-        } else {
-          toast.success(
-            `Búsqueda completada: ${result.publicacionesNuevas} publicaciones nuevas, ${result.coincidenciasGeneradas} coincidencias generadas.`,
-          )
-        }
-      } else {
-        toast.error(result.error)
-      }
+      const { ejecucionId } = await iniciarBusqueda(desde, hasta)
+      pollEstado(ejecucionId)
     })
   }
+
+  const buscando = isPending || isPolling
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -76,7 +108,17 @@ export function RunSearchDialog() {
           </div>
         </div>
 
-        {summary && !summary.error && (
+        {buscando && (
+          <Alert>
+            <AlertTitle>Buscando...</AlertTitle>
+            <AlertDescription>
+              Esto puede tardar varios minutos si el rango incluye muchas fechas. Puedes cerrar este diálogo; la
+              búsqueda sigue corriendo en segundo plano.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {summary && !buscando && !summary.error && (
           <Alert>
             <AlertTitle>Resultado de la búsqueda</AlertTitle>
             <AlertDescription>
@@ -90,8 +132,8 @@ export function RunSearchDialog() {
           <Button variant="ghost" onClick={() => setOpen(false)}>
             Cerrar
           </Button>
-          <Button onClick={handleSubmit} disabled={isPending}>
-            {isPending ? "Buscando..." : "Iniciar búsqueda"}
+          <Button onClick={handleSubmit} disabled={buscando}>
+            {buscando ? "Buscando..." : "Iniciar búsqueda"}
           </Button>
         </DialogFooter>
       </DialogContent>

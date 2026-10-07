@@ -97,6 +97,8 @@ export const ejecucionesScraping = pgTable("ejecuciones_scraping", {
   publicacionesNuevas: integer("publicaciones_nuevas").notNull().default(0),
   coincidenciasGeneradas: integer("coincidencias_generadas").notNull().default(0),
   errores: text("errores"),
+  /** Fechas del rango consultado que terminaron en ERROR DE CONSULTA (no se pudieron revisar). */
+  fechasConError: jsonb("fechas_con_error").$type<string[]>(),
   estado: text("estado").notNull().default("en_progreso"),
 })
 
