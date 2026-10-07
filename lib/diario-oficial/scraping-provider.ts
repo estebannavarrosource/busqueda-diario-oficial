@@ -1,9 +1,10 @@
 import * as cheerio from "cheerio"
-import { fetchRenderedHtml } from "./browser"
+import { withBrowserSession } from "./browser"
 import type { DiarioOficialProvider, PublicacionRaw, SearchCriteria } from "./types"
 
 const BASE_URL = "https://www.diariooficial.interior.gob.cl"
 const SUMARIO_PATH = "/edicionelectronica/index.php"
+const NORMAS_PARTICULARES_PATH = "/edicionelectronica/normas_particulares.php"
 
 // Coincide con expedientes DGA del tipo PT-0703-278, ND-1234-56, CS1234-78, etc.
 const EXPEDIENTE_REGEX = /\b[A-Z]{2,4}[-\s]?\d{3,5}[-\s]?\d{1,5}\b/
@@ -32,9 +33,19 @@ function extractResolucion(texto: string): string | null {
   return match ? match[1].replace(/\./g, "") : null
 }
 
-/** Extrae un nombre de solicitante a partir de frases comunes "...presentada por X", "...de X." */
+/**
+ * Extrae un nombre de solicitante a partir de frases comunes "...presentada por X", "...de X."
+ * En Normas Particulares (ej. solicitudes de derechos de agua de la DGA), el título del
+ * sumario suele ser directamente "Solicitud <Nombre Apellido>" sin esas frases, de ahí el
+ * patrón final que toma el resto del título tras la palabra "Solicitud".
+ */
 function extractNombreInteresado(texto: string): string | null {
-  const patterns = [/presentad[ao]\s+por\s+([^.;,]+)/i, /solicitud\s+de\s+([^.;,]+)/i, /a\s+favor\s+de\s+([^.;,]+)/i]
+  const patterns = [
+    /presentad[ao]\s+por\s+([^.;,]+)/i,
+    /solicitud\s+de\s+([^.;,]+)/i,
+    /a\s+favor\s+de\s+([^.;,]+)/i,
+    /^solicitud(?:es)?\s+([^.;,]+)/i,
+  ]
   for (const pattern of patterns) {
     const match = texto.match(pattern)
     if (match) return match[1].trim()
@@ -47,17 +58,22 @@ function resolveUrl(href: string): string {
   return `${BASE_URL}${href.startsWith("/") ? "" : "/"}${href}`
 }
 
-async function fetchSumario(fecha: string): Promise<PublicacionRaw[]> {
-  const url = `${BASE_URL}${SUMARIO_PATH}?date=${formatDateForSite(fecha)}`
+/** Extrae el número de edición (ej. "44.563" -> "44563") desde el HTML del sumario. */
+function extractEdicion(html: string): string | null {
+  const match = html.match(/N[úu]m\.?\s*([\d.]{3,10})/)
+  return match ? match[1].replace(/\./g, "") : null
+}
 
-  // Un fetch de servidor simple recibe la página del desafío anti-bot del sitio
-  // (cookies "TS") en vez del sumario real. Se usa un navegador headless que
-  // ejecuta el JavaScript del desafío y entrega el HTML ya renderizado.
-  const html = await fetchRenderedHtml(url)
+function parseSumarioHtml(
+  html: string,
+  fecha: string,
+  url: string,
+  seccionPorDefecto: string,
+): PublicacionRaw[] {
   const $ = cheerio.load(html)
   const publicaciones: PublicacionRaw[] = []
 
-  let seccionActual = "Normas Generales"
+  let seccionActual = seccionPorDefecto
   let organismoActual: string | null = null
 
   $("table tr").each((_, row) => {
@@ -101,6 +117,38 @@ async function fetchSumario(fecha: string): Promise<PublicacionRaw[]> {
   })
 
   return publicaciones
+}
+
+async function fetchSumario(fecha: string): Promise<PublicacionRaw[]> {
+  const dateParam = formatDateForSite(fecha)
+  const generalUrl = `${BASE_URL}${SUMARIO_PATH}?date=${dateParam}`
+
+  // Un fetch de servidor simple recibe la página del desafío anti-bot del sitio
+  // (cookies "TS") en vez del sumario real. Se usa un navegador headless que
+  // ejecuta el JavaScript del desafío y entrega el HTML ya renderizado.
+  //
+  // El sumario se divide en dos páginas separadas: "Normas Generales" (decretos,
+  // leyes, resoluciones de alcance general) y "Normas Particulares" (solicitudes
+  // individuales, como las de derechos de aprovechamiento de aguas de la DGA).
+  // La segunda requiere el número de edición y las cookies de sesión obtenidas al
+  // visitar la primera, así que ambas se navegan dentro del mismo contexto.
+  return withBrowserSession(async (nav) => {
+    const generalHtml = await nav(generalUrl)
+    const publicaciones = parseSumarioHtml(generalHtml, fecha, generalUrl, "Normas Generales")
+
+    const edicion = extractEdicion(generalHtml)
+    if (edicion) {
+      const particularesUrl = `${BASE_URL}${NORMAS_PARTICULARES_PATH}?date=${dateParam}&edition=${edicion}`
+      try {
+        const particularesHtml = await nav(particularesUrl)
+        publicaciones.push(...parseSumarioHtml(particularesHtml, fecha, particularesUrl, "Normas Particulares"))
+      } catch (error) {
+        console.error(`[v0] Error obteniendo Normas Particulares del ${fecha}:`, error)
+      }
+    }
+
+    return publicaciones
+  })
 }
 
 export class ScrapingDiarioOficialProvider implements DiarioOficialProvider {

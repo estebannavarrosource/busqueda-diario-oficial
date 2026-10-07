@@ -35,21 +35,39 @@ async function getBrowser(): Promise<Browser> {
  * resuelto el desafío anti-bot del sitio.
  */
 export async function fetchRenderedHtml(url: string): Promise<string> {
+  return withBrowserSession((nav) => nav(url))
+}
+
+/**
+ * Abre un contexto de navegador y entrega una función `nav(url)` para navegar dentro de
+ * esa misma sesión (mismas cookies) tantas veces como se necesite, cerrando el contexto
+ * al finalizar.
+ *
+ * El desafío anti-bot del sitio (cookies "TS") se resuelve al visitar la primera URL.
+ * Algunas secciones del sumario (ej. normas_particulares.php, que además requiere el
+ * número de edición obtenido de la primera página) solo devuelven contenido real si se
+ * navegan en el mismo contexto después de esa primera visita.
+ */
+export async function withBrowserSession<T>(fn: (nav: (url: string) => Promise<string>) => Promise<T>): Promise<T> {
   const browser = await getBrowser()
   const context = await browser.newContext({ userAgent: USER_AGENT })
   const page = await context.newPage()
 
-  try {
+  const nav = async (url: string): Promise<string> => {
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 })
 
     // Espera a que aparezca contenido real del sumario (enlaces "Ver PDF"). Si la fecha
-    // no tiene edición (fin de semana/feriado) este selector nunca aparece; el timeout
-    // de respaldo evita colgar la ejecución indefinidamente en ese caso.
+    // no tiene edición (fin de semana/feriado) o la sección viene vacía, este selector
+    // nunca aparece; el timeout de respaldo evita colgar la ejecución indefinidamente.
     await page
       .waitForSelector('a:has-text("Ver PDF")', { timeout: 15000 })
       .catch(() => page.waitForTimeout(2000))
 
-    return await page.content()
+    return page.content()
+  }
+
+  try {
+    return await fn(nav)
   } finally {
     await context.close()
   }
