@@ -1,4 +1,5 @@
 import * as cheerio from "cheerio"
+import { fetchRenderedHtml } from "./browser"
 import type { DiarioOficialProvider, PublicacionRaw, SearchCriteria } from "./types"
 
 const BASE_URL = "https://www.diariooficial.interior.gob.cl"
@@ -48,16 +49,11 @@ function resolveUrl(href: string): string {
 
 async function fetchSumario(fecha: string): Promise<PublicacionRaw[]> {
   const url = `${BASE_URL}${SUMARIO_PATH}?date=${formatDateForSite(fecha)}`
-  const response = await fetch(url, {
-    headers: { "User-Agent": "Mozilla/5.0 (compatible; SistemaDGA/1.0)" },
-    cache: "no-store",
-  })
 
-  if (!response.ok) {
-    throw new Error(`Diario Oficial respondió ${response.status} para la fecha ${fecha}`)
-  }
-
-  const html = await response.text()
+  // Un fetch de servidor simple recibe la página del desafío anti-bot del sitio
+  // (cookies "TS") en vez del sumario real. Se usa un navegador headless que
+  // ejecuta el JavaScript del desafío y entrega el HTML ya renderizado.
+  const html = await fetchRenderedHtml(url)
   const $ = cheerio.load(html)
   const publicaciones: PublicacionRaw[] = []
 
