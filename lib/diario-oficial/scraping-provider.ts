@@ -160,13 +160,33 @@ export class ScrapingDiarioOficialProvider implements DiarioOficialProvider {
     const dates = enumerateDates(criteria.desde, criteria.hasta)
     const results: PublicacionRaw[] = []
 
+    // En este entorno el proceso de Chromium a veces se cierra solo justo después de
+    // lanzarse (antes de poder navegar), independiente de si es una instancia nueva.
+    // Un reintento con otro navegador nuevo recupera la fecha en la mayoría de los
+    // casos. Una pequeña pausa entre fechas evita lanzar muchos Chromium de golpe y
+    // disparar el límite de tasa del desafío anti-bot del sitio (que responde con la
+    // conexión cortada, ERR_EMPTY_RESPONSE, si lo saturamos).
+    const MAX_INTENTOS = 3
     for (const fecha of dates) {
-      try {
-        const publicaciones = await fetchSumario(fecha)
-        results.push(...publicaciones)
-      } catch (error) {
-        console.error(`[v0] Error obteniendo sumario del ${fecha}:`, error)
+      let ultimoError: unknown
+      for (let intento = 1; intento <= MAX_INTENTOS; intento++) {
+        try {
+          const publicaciones = await fetchSumario(fecha)
+          results.push(...publicaciones)
+          ultimoError = null
+          break
+        } catch (error) {
+          ultimoError = error
+          console.error(`[v0] Error obteniendo sumario del ${fecha} (intento ${intento}/${MAX_INTENTOS}):`, error)
+          if (intento < MAX_INTENTOS) {
+            await new Promise((resolve) => setTimeout(resolve, 1500 * intento))
+          }
+        }
       }
+      if (ultimoError) {
+        console.error(`[v0] Se agotaron los reintentos para el ${fecha}, se omite esta fecha.`)
+      }
+      await new Promise((resolve) => setTimeout(resolve, 800))
     }
 
     if (!criteria.texto) return results
