@@ -5,7 +5,8 @@ import { ESTADO_EXPEDIENTE } from "@/lib/matching"
 const ESTADO_STYLES: Record<string, string> = {
   [ESTADO_EXPEDIENTE.PENDIENTE]: "bg-secondary text-secondary-foreground",
   [ESTADO_EXPEDIENTE.SIN_COINCIDENCIA]: "bg-destructive/10 text-destructive border-destructive/20",
-  [ESTADO_EXPEDIENTE.POSIBLE]: "bg-warning/15 text-warning-foreground border-warning/30",
+  // POSIBLE y REVISION comparten el mismo texto visible ("POSIBLE PUBLICACIÓN – requiere
+  // revisión"), así que una sola entrada cubre ambas claves.
   [ESTADO_EXPEDIENTE.REVISION]: "bg-warning/25 text-warning-foreground border-warning/40",
   [ESTADO_EXPEDIENTE.CONFIRMADA]: "bg-success/15 text-success border-success/30",
   [ESTADO_EXPEDIENTE.ERROR]: "bg-destructive/15 text-destructive border-destructive/30",

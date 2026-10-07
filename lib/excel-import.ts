@@ -8,6 +8,12 @@ export interface ExpedienteImportRow {
   fechaSolicitud: string | null
   fechaAsignacion: string | null
   comentarios: string | null
+  region: string | null
+  provincia: string | null
+  comuna: string | null
+  tipoSolicitud: string | null
+  fuenteAgua: string | null
+  caudal: string | null
 }
 
 export interface ImportResult {
@@ -31,6 +37,12 @@ const HEADER_ALIASES: Record<keyof ExpedienteImportRow, string[]> = {
   fechaSolicitud: ["fechasolicitud", "fechadesolicitud", "fecha"],
   fechaAsignacion: ["fechaasignacion", "fechadeasignacion"],
   comentarios: ["comentarios", "observaciones", "notas"],
+  region: ["region"],
+  provincia: ["provincia"],
+  comuna: ["comuna"],
+  tipoSolicitud: ["tiposolicitud", "tipodesolicitud", "tipoderecho"],
+  fuenteAgua: ["fuentedeagua", "fuenteagua", "acuifero", "fuente"],
+  caudal: ["caudal", "caudalsolicitado", "caudall/s"],
 }
 
 function excelDateToISO(value: unknown): string | null {
@@ -108,6 +120,12 @@ export function parseExpedientesExcel(buffer: ArrayBuffer): ImportResult {
       fechaSolicitud: headerMap.fechaSolicitud ? excelDateToISO(row[headerMap.fechaSolicitud]) : null,
       fechaAsignacion: headerMap.fechaAsignacion ? excelDateToISO(row[headerMap.fechaAsignacion]) : null,
       comentarios: headerMap.comentarios ? String(row[headerMap.comentarios] ?? "").trim() || null : null,
+      region: headerMap.region ? String(row[headerMap.region] ?? "").trim() || null : null,
+      provincia: headerMap.provincia ? String(row[headerMap.provincia] ?? "").trim() || null : null,
+      comuna: headerMap.comuna ? String(row[headerMap.comuna] ?? "").trim() || null : null,
+      tipoSolicitud: headerMap.tipoSolicitud ? String(row[headerMap.tipoSolicitud] ?? "").trim() || null : null,
+      fuenteAgua: headerMap.fuenteAgua ? String(row[headerMap.fuenteAgua] ?? "").trim() || null : null,
+      caudal: headerMap.caudal ? String(row[headerMap.caudal] ?? "").trim() || null : null,
     })
   }
 
@@ -129,5 +147,12 @@ export function buildExpedienteRecord(row: ExpedienteImportRow) {
     fechaSolicitud: row.fechaSolicitud,
     fechaAsignacion: row.fechaAsignacion,
     comentarios: row.comentarios,
+    region: row.region,
+    provincia: row.provincia,
+    comuna: row.comuna,
+    comunaNormalizada: row.comuna ? row.comuna.toUpperCase() : null,
+    tipoSolicitud: row.tipoSolicitud,
+    fuenteAgua: row.fuenteAgua,
+    caudal: row.caudal,
   }
 }

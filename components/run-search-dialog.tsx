@@ -35,9 +35,15 @@ export function RunSearchDialog() {
       const result = await ejecutarBusqueda(desde, hasta)
       setSummary(result)
       if (!result.error) {
-        toast.success(
-          `Búsqueda completada: ${result.publicacionesNuevas} publicaciones nuevas, ${result.coincidenciasGeneradas} coincidencias generadas.`,
-        )
+        if (result.fechasConError.length > 0) {
+          toast.warning(
+            `Búsqueda completada con ${result.fechasConError.length} fecha(s) que no se pudieron revisar. Reintenta esas fechas puntuales.`,
+          )
+        } else {
+          toast.success(
+            `Búsqueda completada: ${result.publicacionesNuevas} publicaciones nuevas, ${result.coincidenciasGeneradas} coincidencias generadas.`,
+          )
+        }
       } else {
         toast.error(result.error)
       }

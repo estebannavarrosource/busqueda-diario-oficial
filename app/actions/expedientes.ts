@@ -12,6 +12,12 @@ export interface BusquedaSummary {
   publicacionesNuevas: number
   coincidenciasGeneradas: number
   expedientesActualizados: number
+  /**
+   * Fechas dentro del rango consultado que terminaron en ERROR DE CONSULTA (ej. cambio de
+   * estructura del sitio, bloqueo del navegador headless). Deben mostrarse al usuario para que
+   * pueda reintentar esas fechas puntuales; nunca deben interpretarse como "sin publicaciones".
+   */
+  fechasConError: string[]
   error?: string
 }
 
@@ -22,7 +28,7 @@ export async function ejecutarBusqueda(desde: string, hasta: string): Promise<Bu
     .returning({ id: ejecucionesScraping.id })
 
   try {
-    const resultados = await diarioOficialProvider.search({ desde, hasta })
+    const { publicaciones: resultados, fechasConError } = await diarioOficialProvider.search({ desde, hasta })
 
     let publicacionesNuevas = 0
     const publicacionIds: number[] = []
@@ -41,9 +47,21 @@ export async function ejecutarBusqueda(desde: string, hasta: string): Promise<Bu
           fechaPublicacion: raw.fechaPublicacion,
           numeroEdicion: raw.numeroEdicion,
           seccion: raw.seccion,
+          ministerio: raw.ministerio,
           organismo: raw.organismo,
+          categoria: raw.categoria,
+          esCandidataDga: raw.esCandidataDga,
           titulo: raw.titulo,
           materia: raw.materia,
+          extracto: raw.extracto,
+          region: raw.region,
+          provincia: raw.provincia,
+          comuna: raw.comuna,
+          comunaNormalizada: raw.comuna ? raw.comuna.toUpperCase() : null,
+          tipoSolicitud: raw.tipoSolicitud,
+          fuenteAgua: raw.fuenteAgua,
+          caudal: raw.caudal,
+          coordenadas: raw.coordenadas,
           cve: raw.cve,
           url: raw.url,
           pdfUrl: raw.pdfUrl,
@@ -71,7 +89,11 @@ export async function ejecutarBusqueda(desde: string, hasta: string): Promise<Bu
         publicacionesEncontradas: resultados.length,
         publicacionesNuevas,
         coincidenciasGeneradas,
-        estado: "completado",
+        estado: fechasConError.length > 0 ? "completado_con_errores" : "completado",
+        errores:
+          fechasConError.length > 0
+            ? `ERROR DE CONSULTA en las siguientes fechas (no se pudieron revisar, no asumir que no tienen publicaciones): ${fechasConError.join(", ")}`
+            : null,
       })
       .where(eq(ejecucionesScraping.id, ejecucion.id))
 
@@ -82,6 +104,7 @@ export async function ejecutarBusqueda(desde: string, hasta: string): Promise<Bu
       publicacionesNuevas,
       coincidenciasGeneradas,
       expedientesActualizados: coincidenciasGeneradas,
+      fechasConError,
     }
   } catch (error) {
     await db
@@ -98,6 +121,7 @@ export async function ejecutarBusqueda(desde: string, hasta: string): Promise<Bu
       publicacionesNuevas: 0,
       coincidenciasGeneradas: 0,
       expedientesActualizados: 0,
+      fechasConError: [],
       error: error instanceof Error ? error.message : "Error ejecutando la búsqueda.",
     }
   }
@@ -121,6 +145,8 @@ async function generarCoincidencias(publicacionIds: number[]): Promise<number> {
           numeroExpedienteNormalizado: exp.numeroExpedienteNormalizado,
           solicitanteNormalizado: exp.solicitanteNormalizado,
           rutNormalizado: exp.rutNormalizado,
+          comuna: exp.comuna,
+          fuenteAgua: exp.fuenteAgua,
         },
         pub,
       )

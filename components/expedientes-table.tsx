@@ -27,7 +27,10 @@ export interface ExpedienteRow {
   coincidenciasPendientes: number
 }
 
-const ESTADOS_FILTRO = Object.values(ESTADO_EXPEDIENTE)
+// ESTADO_EXPEDIENTE tiene varias claves que comparten el mismo texto visible (ej. POSIBLE y
+// REVISION se unificaron en "POSIBLE PUBLICACIÓN – requiere revisión"), de ahí el Set para que el
+// filtro no muestre la misma opción repetida.
+const ESTADOS_FILTRO = Array.from(new Set(Object.values(ESTADO_EXPEDIENTE)))
 
 export function ExpedientesTable({ expedientes }: { expedientes: ExpedienteRow[] }) {
   const [query, setQuery] = useState("")
