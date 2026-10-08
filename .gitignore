@@ -9,6 +9,9 @@ __v0_jsx-dev-runtime.ts
 # Environment variables
 .env*.local
 
+# PDFs descargados (almacenamiento local)
+/storage/
+
 # Common ignores
 node_modules
 .next/

@@ -1,4 +1,4 @@
-import { put } from "@vercel/blob"
+import { guardarPdf } from "@/lib/storage"
 import { and, asc, eq, inArray, lt, sql } from "drizzle-orm"
 import { db } from "@/lib/db"
 import { auditoriaDocumentos, documentosCve, ejecucionesDescarga } from "@/lib/db/schema"
@@ -125,14 +125,10 @@ export async function ejecutarDescarga(ejecucionId: number, documentos: Document
               throw new Error(`Respuesta inválida (HTTP ${res.status}, ${res.contentType || "sin tipo"})`)
             }
             const [y, m] = fecha.split("-")
-            const blob = await put(`diario-oficial/${y}/${m}/${doc.cve}.pdf`, res.body, {
-              access: "public",
-              contentType: "application/pdf",
-              allowOverwrite: true,
-            })
-            await marcar(doc, "descargado", {
-              urlOrigen: url,
-              blobPathname: blob.pathname,
+  const pathname = await guardarPdf(`diario-oficial/${y}/${m}/${doc.cve}.pdf`, res.body)
+  await marcar(doc, "descargado", {
+    urlOrigen: url,
+    blobPathname: pathname,
               tamanoBytes: res.body.length,
               fechaDescarga: new Date(),
               ultimoError: null,

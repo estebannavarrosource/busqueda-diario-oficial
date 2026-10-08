@@ -2,15 +2,18 @@
 
 Sistema para cruzar expedientes de derechos de agua con las publicaciones del Diario Oficial de Chile y gestionar las publicaciones DGA (clasificación y descarga de PDFs por CVE).
 
-**Instalación completa paso a paso: [docs/INSTALACION.md](docs/INSTALACION.md)**
+**Instalación en servidor propio, paso a paso: [docs/INSTALACION.md](docs/INSTALACION.md)**
 
-## Inicio rápido (local)
+Requiere Node.js 20.9+ (recomendado 24 LTS), PostgreSQL 15+ y Chromium. Los PDFs se guardan en el disco del servidor.
+
+## Inicio rápido (desarrollo)
 
 ```bash
 corepack enable
 pnpm install
-cp .env.example .env.local      # completar DATABASE_URL y BLOB_READ_WRITE_TOKEN
-# ejecutar scripts/001-schema-completo.sql y scripts/002-reglas-dga-iniciales.sql en la base
+cp .env.example .env.local      # completar DATABASE_URL y PDF_STORAGE_DIR
+psql "$DATABASE_URL" -f scripts/001-schema-completo.sql
+psql "$DATABASE_URL" -f scripts/002-reglas-dga-iniciales.sql
 pnpm dev                        # http://localhost:3000
 ```
 
