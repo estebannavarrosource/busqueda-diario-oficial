@@ -20,6 +20,14 @@ const USER_AGENT =
  */
 async function launchBrowser(): Promise<Browser> {
   const { chromium: playwrightChromium } = await import("playwright-core")
+
+  // @sparticuz/chromium solo trae un binario para Linux x64; en Windows/macOS (o servidores
+  // propios) se usa el Chrome/Chromium instalado indicando su ruta en CHROMIUM_EXECUTABLE_PATH.
+  const rutaLocal = process.env.CHROMIUM_EXECUTABLE_PATH
+  if (rutaLocal) {
+    return playwrightChromium.launch({ executablePath: rutaLocal, headless: true })
+  }
+
   const chromium = (await import("@sparticuz/chromium")).default
   const executablePath = await chromium.executablePath()
   return playwrightChromium.launch({
