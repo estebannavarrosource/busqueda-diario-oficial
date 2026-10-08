@@ -246,7 +246,17 @@ async function fetchSumario(fecha: string): Promise<PublicacionRaw[]> {
   // de aprovechamiento de aguas de la DGA—). La segunda requiere el número de
   // edición y las cookies de sesión obtenidas al visitar la primera, así que ambas
   // se navegan dentro del mismo contexto.
-  return withBrowserSession(async (nav) => {
+  return withBrowserSession((nav) => fetchSumarioEnSesion(fecha, nav))
+}
+
+/** Lee ambas secciones del sumario de `fecha` dentro de una sesión de navegador ya abierta. */
+export async function fetchSumarioEnSesion(
+  fecha: string,
+  nav: (url: string) => Promise<string>,
+): Promise<PublicacionRaw[]> {
+  const dateParam = formatDateForSite(fecha)
+  const generalUrl = `${BASE_URL}${SUMARIO_PATH}?date=${dateParam}`
+  {
     const generalHtml = await nav(generalUrl)
     const publicaciones = parseSumarioHtml(generalHtml, fecha, generalUrl, "Normas Generales")
 
@@ -261,7 +271,7 @@ async function fetchSumario(fecha: string): Promise<PublicacionRaw[]> {
     }
 
     return publicaciones
-  })
+  }
 }
 
 export class ScrapingDiarioOficialProvider implements DiarioOficialProvider {

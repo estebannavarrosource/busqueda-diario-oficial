@@ -112,3 +112,91 @@ export const auditoria = pgTable("auditoria", {
   resultadoAnterior: text("resultado_anterior"),
   resultadoNuevo: text("resultado_nuevo"),
 })
+
+export const importacionesDga = pgTable("importaciones_dga", {
+  id: serial("id").primaryKey(),
+  nombreArchivo: text("nombre_archivo").notNull(),
+  fecha: timestamp("fecha", { withTimezone: true }).notNull().defaultNow(),
+  totalRegistros: integer("total_registros").notNull().default(0),
+  registrosDga: integer("registros_dga").notNull().default(0),
+  nuevos: integer("nuevos").notNull().default(0),
+  actualizados: integer("actualizados").notNull().default(0),
+})
+
+/** Un registro por fila del Excel (ID_DOE). Varias filas pueden compartir el mismo CVE. */
+export const publicacionesDga = pgTable("publicaciones_dga", {
+  id: serial("id").primaryKey(),
+  idDoe: text("id_doe").notNull().unique(),
+  cve: text("cve"),
+  fechaPublicacion: date("fecha_publicacion"),
+  cuerpo: integer("cuerpo"),
+  titulo: text("titulo"),
+  tiposol: text("tiposol"),
+  solicitante: text("solicitante"),
+  rut: text("rut"),
+  rutNormalizado: text("rut_normalizado"),
+  region: text("region"),
+  provincia: text("provincia"),
+  comuna: text("comuna"),
+  texto: text("texto"),
+  datosOriginales: jsonb("datos_originales").$type<Record<string, unknown>>().notNull(),
+  esDga: boolean("es_dga").notNull().default(false),
+  tipoProcedimiento: text("tipo_procedimiento"),
+  origen: text("origen"),
+  reglasAplicadas: jsonb("reglas_aplicadas").$type<string[]>(),
+  importacionId: integer("importacion_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+})
+
+/** Un documento PDF por CVE (deduplicado), compartido por todas las filas con ese CVE. */
+export const documentosCve = pgTable("documentos_cve", {
+  id: serial("id").primaryKey(),
+  cve: text("cve").notNull().unique(),
+  fechaPublicacion: date("fecha_publicacion"),
+  estado: text("estado").notNull().default("pendiente"),
+  urlOrigen: text("url_origen"),
+  blobPathname: text("blob_pathname"),
+  tamanoBytes: integer("tamano_bytes"),
+  fechaDescarga: timestamp("fecha_descarga", { withTimezone: true }),
+  intentos: integer("intentos").notNull().default(0),
+  ultimoError: text("ultimo_error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+})
+
+export const reglasDga = pgTable("reglas_dga", {
+  id: serial("id").primaryKey(),
+  nombre: text("nombre").notNull(),
+  campo: text("campo").notNull(),
+  patron: text("patron").notNull(),
+  efecto: text("efecto").notNull().default("INCLUIR"),
+  tipoProcedimiento: text("tipo_procedimiento"),
+  origen: text("origen"),
+  prioridad: integer("prioridad").notNull().default(100),
+  activa: boolean("activa").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+})
+
+export const ejecucionesDescarga = pgTable("ejecuciones_descarga", {
+  id: serial("id").primaryKey(),
+  fechaInicio: timestamp("fecha_inicio", { withTimezone: true }).notNull().defaultNow(),
+  fechaFin: timestamp("fecha_fin", { withTimezone: true }),
+  estado: text("estado").notNull().default("en_progreso"),
+  total: integer("total").notNull().default(0),
+  procesados: integer("procesados").notNull().default(0),
+  descargados: integer("descargados").notNull().default(0),
+  noDisponibles: integer("no_disponibles").notNull().default(0),
+  errores: integer("errores").notNull().default(0),
+  mensaje: text("mensaje"),
+  actualizadoEn: timestamp("actualizado_en", { withTimezone: true }).notNull().defaultNow(),
+})
+
+export const auditoriaDocumentos = pgTable("auditoria_documentos", {
+  id: serial("id").primaryKey(),
+  fecha: timestamp("fecha", { withTimezone: true }).notNull().defaultNow(),
+  accion: text("accion").notNull(),
+  cve: text("cve"),
+  detalle: text("detalle"),
+  usuario: text("usuario"),
+})

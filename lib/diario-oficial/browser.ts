@@ -47,7 +47,15 @@ export async function fetchRenderedHtml(url: string): Promise<string> {
  * número de edición obtenido de la primera página) solo devuelven contenido real si se
  * navegan en el mismo contexto después de esa primera visita.
  */
-export async function withBrowserSession<T>(fn: (nav: (url: string) => Promise<string>) => Promise<T>): Promise<T> {
+export interface BinaryResponse {
+  status: number
+  contentType: string
+  body: Buffer
+}
+
+export async function withBrowserSession<T>(
+  fn: (nav: (url: string) => Promise<string>, download: (url: string) => Promise<BinaryResponse>) => Promise<T>,
+): Promise<T> {
   const browser = await launchBrowser()
 
   try {
@@ -67,7 +75,18 @@ export async function withBrowserSession<T>(fn: (nav: (url: string) => Promise<s
       return page.content()
     }
 
-    return await fn(nav)
+    // Los PDF se piden con el cliente HTTP del mismo contexto para reutilizar las cookies del
+    // desafío anti-bot ya resuelto al navegar el sumario.
+    const download = async (url: string): Promise<BinaryResponse> => {
+      const response = await context.request.get(url, { timeout: 60000 })
+      return {
+        status: response.status(),
+        contentType: response.headers()["content-type"] ?? "",
+        body: await response.body(),
+      }
+    }
+
+    return await fn(nav, download)
   } finally {
     await browser.close().catch(() => {})
   }

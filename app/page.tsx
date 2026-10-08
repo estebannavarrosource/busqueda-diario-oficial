@@ -1,5 +1,5 @@
 import { desc, eq, sql } from "drizzle-orm"
-import { DownloadIcon, ScaleIcon } from "lucide-react"
+import { DownloadIcon, DropletsIcon, ScaleIcon } from "lucide-react"
 import { db } from "@/lib/db"
 import { coincidencias, expedientes } from "@/lib/db/schema"
 import { obtenerEstadisticas } from "@/app/actions/expedientes"
@@ -51,6 +51,10 @@ export default async function DashboardPage() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <Button variant="ghost" render={<a href="/publicaciones" />} nativeButton={false}>
+              <DropletsIcon data-icon="inline-start" />
+              Publicaciones DGA
+            </Button>
             <ImportDialog />
             <RunSearchDialog />
             <Button variant="outline" render={<a href="/api/exportar" />} nativeButton={false}>
