@@ -14,13 +14,13 @@ const selectClass =
 const ordenar = (a: string, b: string) => a.localeCompare(b, "es")
 
 export function RegionComunaSelects({
-  opciones,
-  region: regionInicial,
-  comuna: comunaInicial,
+  opciones = [],
+  region: regionInicial = "",
+  comuna: comunaInicial = "",
 }: {
-  opciones: RegionComuna[]
-  region: string
-  comuna: string
+  opciones?: RegionComuna[]
+  region?: string
+  comuna?: string
 }) {
   const [region, setRegion] = useState(regionInicial)
   const [comuna, setComuna] = useState(comunaInicial)

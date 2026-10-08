@@ -62,7 +62,7 @@ export function FiltrosPublicaciones({
         <Campo id="tipo" label="Tipo de solicitud">
           <Input id="tipo" name="tipo" placeholder="subterráneas, traslado..." defaultValue={filtros.tipo} />
         </Campo>
-        <RegionComunaSelects opciones={opcionesUbicacion} region={filtros.region} comuna={filtros.comuna} />
+        <RegionComunaSelects opciones={opcionesUbicacion ?? []} region={filtros.region} comuna={filtros.comuna} />
         <Campo id="origen" label="Origen">
           <select id="origen" name="origen" defaultValue={filtros.origen} className={selectClass}>
             <option value="">Todos</option>
