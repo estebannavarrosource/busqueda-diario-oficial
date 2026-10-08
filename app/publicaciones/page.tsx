@@ -33,11 +33,7 @@ function construirFiltros(f: Filtros): SQL | undefined {
   }
   if (f.region) condiciones.push(eq(publicacionesDga.region, f.region))
   if (f.comuna) condiciones.push(eq(publicacionesDga.comuna, f.comuna))
-  if (f.tipo) {
-    condiciones.push(
-      or(ilike(publicacionesDga.tipoProcedimiento, `%${f.tipo}%`), ilike(publicacionesDga.titulo, `%${f.tipo}%`))!,
-    )
-  }
+  if (f.tipo) condiciones.push(eq(publicacionesDga.tipoProcedimiento, f.tipo))
   if (f.origen) condiciones.push(eq(publicacionesDga.origen, f.origen))
   if (f.estado === "sin_documento") condiciones.push(sql`${documentosCve.id} is null`)
   else if (f.estado) condiciones.push(eq(documentosCve.estado, f.estado))
@@ -66,7 +62,7 @@ export default async function PublicacionesPage({
   const pagina = Math.max(1, Number(texto(params.pagina)) || 1)
   const where = construirFiltros(filtros)
 
-  const [filas, [{ total }], resumen, [enCurso], ubicaciones] = await Promise.all([
+  const [filas, [{ total }], resumen, [enCurso], ubicaciones, tipos] = await Promise.all([
     db
       .select({
         id: publicacionesDga.id,
@@ -120,9 +116,22 @@ export default async function PublicacionesPage({
           or(sql`${publicacionesDga.region} <> ''`, sql`${publicacionesDga.comuna} <> ''`),
         ),
       ),
+    db
+      .selectDistinct({ tipo: publicacionesDga.tipoProcedimiento })
+      .from(publicacionesDga)
+      .where(
+        and(
+          filtros.alcance !== "todas" ? eq(publicacionesDga.esDga, true) : undefined,
+          sql`coalesce(${publicacionesDga.tipoProcedimiento}, '') <> ''`,
+        ),
+      ),
   ])
 
   const opcionesUbicacion = ubicaciones.map((u) => ({ region: u.region ?? "", comuna: u.comuna ?? "" }))
+  const opcionesTipo = tipos
+    .map((t) => t.tipo ?? "")
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, "es"))
 
   const porEstado = Object.fromEntries(resumen.map((r) => [r.estado, Number(r.n)]))
   const pendientes = (porEstado.pendiente ?? 0) + (porEstado.error ?? 0)
@@ -179,7 +188,7 @@ export default async function PublicacionesPage({
         </dl>
       </header>
 
-      <FiltrosPublicaciones filtros={filtros} opcionesUbicacion={opcionesUbicacion} />
+      <FiltrosPublicaciones filtros={filtros} opcionesUbicacion={opcionesUbicacion} opcionesTipo={opcionesTipo} />
 
       <section className="flex flex-col gap-3">
         <p className="text-sm text-muted-foreground">

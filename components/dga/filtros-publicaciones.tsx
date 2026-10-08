@@ -37,9 +37,11 @@ function Campo({ id, label, children }: { id: string; label: string; children: R
 export function FiltrosPublicaciones({
   filtros,
   opcionesUbicacion,
+  opcionesTipo,
 }: {
   filtros: Filtros
   opcionesUbicacion: RegionComuna[]
+  opcionesTipo?: string[]
 }) {
   return (
     <form method="get" className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4">
@@ -60,7 +62,17 @@ export function FiltrosPublicaciones({
           <Input id="solicitante" name="solicitante" defaultValue={filtros.solicitante} />
         </Campo>
         <Campo id="tipo" label="Tipo de solicitud">
-          <Input id="tipo" name="tipo" placeholder="subterráneas, traslado..." defaultValue={filtros.tipo} />
+          <select id="tipo" name="tipo" defaultValue={filtros.tipo} className={selectClass}>
+            <option value="">Todos</option>
+            {filtros.tipo && !(opcionesTipo ?? []).includes(filtros.tipo) && (
+              <option value={filtros.tipo}>{filtros.tipo}</option>
+            )}
+            {(opcionesTipo ?? []).map((tipo) => (
+              <option key={tipo} value={tipo}>
+                {tipo}
+              </option>
+            ))}
+          </select>
         </Campo>
         <RegionComunaSelects opciones={opcionesUbicacion ?? []} region={filtros.region} comuna={filtros.comuna} />
         <Campo id="origen" label="Origen">
