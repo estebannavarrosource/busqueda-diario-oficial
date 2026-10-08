@@ -3,6 +3,7 @@ import { SearchIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { RegionComunaSelects, type RegionComuna } from "@/components/dga/region-comuna-selects"
 
 export interface Filtros {
   desde: string
@@ -33,7 +34,13 @@ function Campo({ id, label, children }: { id: string; label: string; children: R
 }
 
 /** Formulario GET: los filtros viven en la URL, así se pueden compartir y la página se filtra en el servidor. */
-export function FiltrosPublicaciones({ filtros }: { filtros: Filtros }) {
+export function FiltrosPublicaciones({
+  filtros,
+  opcionesUbicacion,
+}: {
+  filtros: Filtros
+  opcionesUbicacion: RegionComuna[]
+}) {
   return (
     <form method="get" className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-6">
@@ -55,12 +62,7 @@ export function FiltrosPublicaciones({ filtros }: { filtros: Filtros }) {
         <Campo id="tipo" label="Tipo de solicitud">
           <Input id="tipo" name="tipo" placeholder="subterráneas, traslado..." defaultValue={filtros.tipo} />
         </Campo>
-        <Campo id="region" label="Región">
-          <Input id="region" name="region" defaultValue={filtros.region} />
-        </Campo>
-        <Campo id="comuna" label="Comuna">
-          <Input id="comuna" name="comuna" defaultValue={filtros.comuna} />
-        </Campo>
+        <RegionComunaSelects opciones={opcionesUbicacion} region={filtros.region} comuna={filtros.comuna} />
         <Campo id="origen" label="Origen">
           <select id="origen" name="origen" defaultValue={filtros.origen} className={selectClass}>
             <option value="">Todos</option>

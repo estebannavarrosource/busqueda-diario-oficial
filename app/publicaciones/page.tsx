@@ -31,8 +31,8 @@ function construirFiltros(f: Filtros): SQL | undefined {
     const rut = normalizeRut(f.rut)
     condiciones.push(rut ? eq(publicacionesDga.rutNormalizado, rut) : ilike(publicacionesDga.rut, `%${f.rut}%`))
   }
-  if (f.region) condiciones.push(ilike(publicacionesDga.region, `%${f.region}%`))
-  if (f.comuna) condiciones.push(ilike(publicacionesDga.comuna, `%${f.comuna}%`))
+  if (f.region) condiciones.push(eq(publicacionesDga.region, f.region))
+  if (f.comuna) condiciones.push(eq(publicacionesDga.comuna, f.comuna))
   if (f.tipo) {
     condiciones.push(
       or(ilike(publicacionesDga.tipoProcedimiento, `%${f.tipo}%`), ilike(publicacionesDga.titulo, `%${f.tipo}%`))!,
@@ -66,7 +66,7 @@ export default async function PublicacionesPage({
   const pagina = Math.max(1, Number(texto(params.pagina)) || 1)
   const where = construirFiltros(filtros)
 
-  const [filas, [{ total }], resumen, [enCurso]] = await Promise.all([
+  const [filas, [{ total }], resumen, [enCurso], ubicaciones] = await Promise.all([
     db
       .select({
         id: publicacionesDga.id,
@@ -111,7 +111,18 @@ export default async function PublicacionesPage({
         ),
       )
       .limit(1),
+    db
+      .selectDistinct({ region: publicacionesDga.region, comuna: publicacionesDga.comuna })
+      .from(publicacionesDga)
+      .where(
+        and(
+          filtros.alcance !== "todas" ? eq(publicacionesDga.esDga, true) : undefined,
+          or(sql`${publicacionesDga.region} <> ''`, sql`${publicacionesDga.comuna} <> ''`),
+        ),
+      ),
   ])
+
+  const opcionesUbicacion = ubicaciones.map((u) => ({ region: u.region ?? "", comuna: u.comuna ?? "" }))
 
   const porEstado = Object.fromEntries(resumen.map((r) => [r.estado, Number(r.n)]))
   const pendientes = (porEstado.pendiente ?? 0) + (porEstado.error ?? 0)
@@ -168,7 +179,7 @@ export default async function PublicacionesPage({
         </dl>
       </header>
 
-      <FiltrosPublicaciones filtros={filtros} />
+      <FiltrosPublicaciones filtros={filtros} opcionesUbicacion={opcionesUbicacion} />
 
       <section className="flex flex-col gap-3">
         <p className="text-sm text-muted-foreground">
