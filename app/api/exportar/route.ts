@@ -1,11 +1,14 @@
 import { desc, eq } from "drizzle-orm"
 import { utils, write } from "xlsx"
 import { db } from "@/lib/db"
+import { expedientesHabilitado } from "@/lib/features"
 import { coincidencias, expedientes, publicaciones } from "@/lib/db/schema"
 
 export const dynamic = "force-dynamic"
 
 export async function GET() {
+  if (!expedientesHabilitado) return new Response("No encontrado", { status: 404 })
+
   const todosExpedientes = await db.select().from(expedientes).orderBy(desc(expedientes.updatedAt))
 
   const coincidenciasRows = await db

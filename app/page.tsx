@@ -1,4 +1,6 @@
+import { redirect } from "next/navigation"
 import { desc, eq, sql } from "drizzle-orm"
+import { expedientesHabilitado } from "@/lib/features"
 import { DownloadIcon, DropletsIcon, ScaleIcon } from "lucide-react"
 import { db } from "@/lib/db"
 import { coincidencias, expedientes } from "@/lib/db/schema"
@@ -31,6 +33,8 @@ async function getExpedientesConCoincidencias(): Promise<ExpedienteRow[]> {
 }
 
 export default async function DashboardPage() {
+  if (!expedientesHabilitado) redirect("/publicaciones")
+
   const [stats, expedientesRows] = await Promise.all([obtenerEstadisticas(), getExpedientesConCoincidencias()])
 
   return (

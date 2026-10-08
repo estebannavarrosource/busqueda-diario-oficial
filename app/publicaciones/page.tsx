@@ -4,6 +4,7 @@ import { ArrowLeftIcon, DropletsIcon, SlidersHorizontalIcon } from "lucide-react
 import { db } from "@/lib/db"
 import { documentosCve, ejecucionesDescarga, publicacionesDga } from "@/lib/db/schema"
 import { normalizeRut } from "@/lib/normalize"
+import { expedientesHabilitado } from "@/lib/features"
 import { Button } from "@/components/ui/button"
 import { ImportDgaDialog } from "@/components/dga/import-dga-dialog"
 import { DescargarPdfsButton } from "@/components/dga/descargar-pdfs-button"
@@ -147,10 +148,12 @@ export default async function PublicacionesPage({
   return (
     <main className="mx-auto flex min-h-screen max-w-7xl flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8">
       <header className="flex flex-col gap-4 border-b border-border pb-6">
-        <Link href="/" className="flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeftIcon className="size-4" />
-          Expedientes
-        </Link>
+        {expedientesHabilitado && (
+          <Link href="/" className="flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+            <ArrowLeftIcon className="size-4" />
+            Expedientes
+          </Link>
+        )}
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
             <div className="flex size-11 items-center justify-center rounded-lg bg-primary text-primary-foreground">
