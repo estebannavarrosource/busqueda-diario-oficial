@@ -6,7 +6,14 @@ import useSWR from "swr"
 import { FileDownIcon, LoaderIcon, RotateCwIcon } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { iniciarDescargaPdfs, obtenerEstadoDescarga } from "@/app/actions/dga"
+import { iniciarDescargaPdfs, type EstadoDescarga } from "@/app/actions/dga"
+
+async function fetchEstado(url: string): Promise<EstadoDescarga | null> {
+  const res = await fetch(url, { cache: "no-store" })
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(`Estado no disponible (${res.status})`)
+  return res.json()
+}
 
 interface Props {
   pendientes: number
@@ -19,12 +26,18 @@ export function DescargarPdfsButton({ pendientes, ejecucionEnCurso }: Props) {
   const [isPending, startTransition] = useTransition()
 
   const { data: estado } = useSWR(
-    ejecucionId ? ["descarga", ejecucionId] : null,
-    () => obtenerEstadoDescarga(ejecucionId!),
+    ejecucionId ? `/api/dga/descargas/${ejecucionId}` : null,
+    fetchEstado,
     {
       refreshInterval: (latest) => (latest && latest.estado !== "en_progreso" ? 0 : 3000),
+      shouldRetryOnError: true,
+      errorRetryInterval: 5000,
       onSuccess: (latest) => {
-        if (latest && latest.estado !== "en_progreso") {
+        if (!latest) {
+          setEjecucionId(null)
+          return
+        }
+        if (latest.estado !== "en_progreso") {
           toast.success(
             `Descarga ${latest.estado}: ${latest.descargados} PDF descargados, ${latest.noDisponibles} no disponibles, ${latest.errores} con error.`,
           )
@@ -37,7 +50,14 @@ export function DescargarPdfsButton({ pendientes, ejecucionEnCurso }: Props) {
 
   function iniciar() {
     startTransition(async () => {
-      const { ejecucionId: id, total } = await iniciarDescargaPdfs()
+      let resultado: Awaited<ReturnType<typeof iniciarDescargaPdfs>>
+      try {
+        resultado = await iniciarDescargaPdfs()
+      } catch {
+        toast.error("No se pudo iniciar la descarga. Recarga la página e intenta de nuevo.")
+        return
+      }
+      const { ejecucionId: id, total } = resultado
       if (!id) {
         toast.info("No hay documentos pendientes de descarga.")
         return
@@ -77,9 +97,13 @@ export function ReintentarPdfButton({ cve }: { cve: string }) {
       disabled={isPending}
       onClick={() =>
         startTransition(async () => {
-          const { ejecucionId } = await iniciarDescargaPdfs([cve])
-          if (ejecucionId) toast.info(`Reintentando CVE ${cve} en segundo plano.`)
-          router.refresh()
+          try {
+            const { ejecucionId } = await iniciarDescargaPdfs([cve])
+            if (ejecucionId) toast.info(`Reintentando CVE ${cve} en segundo plano.`)
+            router.refresh()
+          } catch {
+            toast.error("No se pudo reintentar. Recarga la página e intenta de nuevo.")
+          }
         })
       }
     >

@@ -70,7 +70,6 @@ export async function obtenerEstadoDescarga(ejecucionId: number): Promise<Estado
   await cerrarEjecucionesHuerfanas()
   const [row] = await db.select().from(ejecucionesDescarga).where(eq(ejecucionesDescarga.id, ejecucionId))
   if (!row) return null
-  if (row.estado !== "en_progreso") revalidatePath("/publicaciones")
   return {
     id: row.id,
     estado: row.estado,

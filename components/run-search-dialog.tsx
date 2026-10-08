@@ -15,7 +15,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { iniciarBusqueda, obtenerEstadoEjecucion, type EstadoEjecucion } from "@/app/actions/expedientes"
+import { iniciarBusqueda, type EstadoEjecucion } from "@/app/actions/expedientes"
 import { toast } from "sonner"
 
 function today() {
@@ -56,7 +56,21 @@ export function RunSearchDialog() {
     localStorage.setItem(STORAGE_KEY, String(ejecucionId))
     setIsPolling(true)
     const check = async () => {
-      const estado = await obtenerEstadoEjecucion(ejecucionId)
+      let estado: EstadoEjecucion | null
+      try {
+        const res = await fetch(`/api/busquedas/${ejecucionId}`, { cache: "no-store" })
+        if (res.status === 404) {
+          estado = null
+        } else if (!res.ok) {
+          throw new Error(`Estado no disponible (${res.status})`)
+        } else {
+          estado = await res.json()
+        }
+      } catch {
+        // Fallo transitorio (reinicio del servidor, red): seguimos sondeando.
+        pollTimeout.current = setTimeout(check, 5000)
+        return
+      }
       if (!estado) {
         setIsPolling(false)
         localStorage.removeItem(STORAGE_KEY)
@@ -91,8 +105,12 @@ export function RunSearchDialog() {
   function handleSubmit() {
     startTransition(async () => {
       setSummary(null)
-      const { ejecucionId } = await iniciarBusqueda(desde, hasta)
-      pollEstado(ejecucionId)
+      try {
+        const { ejecucionId } = await iniciarBusqueda(desde, hasta)
+        pollEstado(ejecucionId)
+      } catch {
+        toast.error("No se pudo iniciar la búsqueda. Recarga la página e intenta de nuevo.")
+      }
     })
   }
 
