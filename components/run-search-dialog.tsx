@@ -24,6 +24,15 @@ function today() {
 
 const ESTADOS_FINALES = ["completado", "completado_con_errores", "error"]
 
+/**
+ * El sondeo del progreso vive en memoria del componente. Si el usuario cierra el diálogo, cambia
+ * de pestaña o recarga la página mientras una búsqueda larga sigue corriendo en segundo plano
+ * (ver `after()` en `iniciarBusqueda`), se perdía la referencia al `ejecucionId` y la UI mostraba
+ * "Buscando..." para siempre o volvía a cero sin mostrar el resultado ya guardado en la base de
+ * datos. Persistimos el ID en curso para poder retomar el sondeo al reabrir.
+ */
+const STORAGE_KEY = "diario-oficial:ejecucion-en-curso"
+
 export function RunSearchDialog() {
   const [open, setOpen] = useState(false)
   const [desde, setDesde] = useState(today())
@@ -34,17 +43,23 @@ export function RunSearchDialog() {
   const pollTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
+    const pendingId = localStorage.getItem(STORAGE_KEY)
+    if (pendingId) pollEstado(Number(pendingId))
+
     return () => {
       if (pollTimeout.current) clearTimeout(pollTimeout.current)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   function pollEstado(ejecucionId: number) {
+    localStorage.setItem(STORAGE_KEY, String(ejecucionId))
     setIsPolling(true)
     const check = async () => {
       const estado = await obtenerEstadoEjecucion(ejecucionId)
       if (!estado) {
         setIsPolling(false)
+        localStorage.removeItem(STORAGE_KEY)
         toast.error("No se encontró el registro de la búsqueda.")
         return
       }
@@ -56,6 +71,7 @@ export function RunSearchDialog() {
 
       setIsPolling(false)
       setSummary(estado)
+      localStorage.removeItem(STORAGE_KEY)
 
       if (estado.error) {
         toast.error(estado.error)
