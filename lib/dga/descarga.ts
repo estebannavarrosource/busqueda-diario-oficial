@@ -1,9 +1,11 @@
-import { put } from "@vercel/blob"
+import { guardarPdf } from "@/lib/storage"
 import { and, asc, eq, inArray, lt, sql } from "drizzle-orm"
 import { db } from "@/lib/db"
 import { auditoriaDocumentos, documentosCve, ejecucionesDescarga } from "@/lib/db/schema"
 import { withBrowserSession } from "@/lib/diario-oficial/browser"
 import { fetchSumarioEnSesion } from "@/lib/diario-oficial/scraping-provider"
+import { resumenError } from "@/lib/errores"
+import { crearLogger } from "@/lib/logger"
 
 export type EstadoDocumento = "pendiente" | "descargado" | "no_disponible" | "error"
 
@@ -72,6 +74,10 @@ export async function ejecutarDescarga(ejecucionId: number, documentos: Document
     else porFecha.set(doc.fechaPublicacion, [...(porFecha.get(doc.fechaPublicacion) ?? []), doc])
   }
 
+  const log = crearLogger("descarga", { ejecucion: ejecucionId })
+  const inicioTotal = Date.now()
+  log.info("inicio", { documentos: documentos.length, fechas: porFecha.size, sinFecha: sinFecha.length })
+
   let procesados = 0
   let descargados = 0
   let noDisponibles = 0
@@ -92,15 +98,20 @@ export async function ejecutarDescarga(ejecucionId: number, documentos: Document
   await progreso()
 
   for (const [fecha, docs] of porFecha) {
+    const flog = log.hijo({ fecha })
+    const inicioFecha = Date.now()
+    flog.info("fecha_inicio", { cves: docs.length })
     try {
       await withBrowserSession(async (nav, download) => {
         const publicaciones = await fetchSumarioEnSesion(fecha, nav)
         const enlaces = new Map<string, string>()
         for (const p of publicaciones) if (p.pdfUrl && !enlaces.has(p.cve)) enlaces.set(p.cve, p.pdfUrl)
+        flog.info("sumario_leido", { publicaciones: publicaciones.length, conPdf: enlaces.size, ms: Date.now() - inicioFecha })
 
         for (const doc of docs) {
           const url = enlaces.get(doc.cve)
           if (!url) {
+            flog.warn("cve_no_en_sumario", { cve: doc.cve })
             await marcar(doc, "no_disponible", {
               ultimoError: `El CVE no aparece en el sumario del ${fecha}`,
             })
@@ -112,6 +123,7 @@ export async function ejecutarDescarga(ejecucionId: number, documentos: Document
 
           const errorValidacion = validarUrlPdf(url, doc.cve, fecha)
           if (errorValidacion) {
+            flog.warn("validacion_fallida", { cve: doc.cve, url, motivo: errorValidacion })
             await marcar(doc, "error", { urlOrigen: url, ultimoError: errorValidacion })
             await registrar("VALIDACION_FALLIDA", doc.cve, errorValidacion)
             errores++
@@ -119,28 +131,29 @@ export async function ejecutarDescarga(ejecucionId: number, documentos: Document
             continue
           }
 
+          const inicioDoc = Date.now()
           try {
             const res = await download(url)
             if (res.status !== 200 || !esPdf(res.body, res.contentType)) {
-              throw new Error(`Respuesta inválida (HTTP ${res.status}, ${res.contentType || "sin tipo"})`)
+              throw new Error(
+                `Respuesta inválida del sitio (HTTP ${res.status}, ${res.contentType || "sin tipo"}, ${res.body.length} bytes)`,
+              )
             }
             const [y, m] = fecha.split("-")
-            const blob = await put(`diario-oficial/${y}/${m}/${doc.cve}.pdf`, res.body, {
-              access: "public",
-              contentType: "application/pdf",
-              allowOverwrite: true,
-            })
-            await marcar(doc, "descargado", {
-              urlOrigen: url,
-              blobPathname: blob.pathname,
+  const pathname = await guardarPdf(`diario-oficial/${y}/${m}/${doc.cve}.pdf`, res.body)
+  await marcar(doc, "descargado", {
+    urlOrigen: url,
+    blobPathname: pathname,
               tamanoBytes: res.body.length,
               fechaDescarga: new Date(),
               ultimoError: null,
             })
             await registrar("DESCARGA", doc.cve, `PDF descargado (${Math.round(res.body.length / 1024)} KB) desde ${url}`)
             descargados++
+            flog.info("pdf_descargado", { cve: doc.cve, kb: Math.round(res.body.length / 1024), destino: pathname, ms: Date.now() - inicioDoc })
           } catch (error) {
-            const mensaje = error instanceof Error ? error.message : String(error)
+            const mensaje = resumenError(error)
+            flog.error("pdf_error", { cve: doc.cve, url, intento: doc.intentos + 1, ms: Date.now() - inicioDoc }, error)
             await marcar(doc, "error", { urlOrigen: url, ultimoError: mensaje })
             await registrar("ERROR_DESCARGA", doc.cve, mensaje)
             errores++
@@ -152,7 +165,8 @@ export async function ejecutarDescarga(ejecucionId: number, documentos: Document
     } catch (error) {
       // Falló la sesión o el sumario completo de la fecha: todos sus CVE quedan con error para
       // reintento, en vez de marcarlos como "no disponibles".
-      const mensaje = error instanceof Error ? error.message : String(error)
+      const mensaje = resumenError(error)
+      flog.error("sesion_o_sumario_fallido", { cves: docs.length, ms: Date.now() - inicioFecha }, error)
       const pendientes = docs.slice(0)
       for (const doc of pendientes) {
         const [actual] = await db
@@ -182,6 +196,7 @@ export async function ejecutarDescarga(ejecucionId: number, documentos: Document
       errores,
     })
     .where(eq(ejecucionesDescarga.id, ejecucionId))
+  log.info("fin", { procesados, descargados, noDisponibles, errores, segundos: Math.round((Date.now() - inicioTotal) / 1000) })
 }
 
 /** Sin actividad por este tiempo, una ejecución "en_progreso" se considera muerta (p. ej. reinicio del servidor). */

@@ -1,8 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { get } from "@vercel/blob"
 import { eq } from "drizzle-orm"
 import { db } from "@/lib/db"
 import { documentosCve } from "@/lib/db/schema"
+import { leerPdf } from "@/lib/storage"
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ cve: string }> }) {
   const { cve } = await params
@@ -14,16 +14,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     .where(eq(documentosCve.cve, cve))
   if (!doc?.blobPathname) return NextResponse.json({ error: "PDF no disponible" }, { status: 404 })
 
-  const result = await get(doc.blobPathname, {
-    access: "public",
-    ifNoneMatch: request.headers.get("if-none-match") ?? undefined,
-  })
+  const result = await leerPdf(doc.blobPathname, request.headers.get("if-none-match") ?? undefined)
   if (!result) return NextResponse.json({ error: "PDF no encontrado" }, { status: 404 })
 
-  if (result.statusCode === 304) {
+  if (result.status === 304) {
     return new NextResponse(null, {
       status: 304,
-      headers: { ETag: result.blob.etag, "Cache-Control": "private, no-cache" },
+      headers: { ETag: result.etag, "Cache-Control": "private, no-cache" },
     })
   }
 
@@ -32,7 +29,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     headers: {
       "Content-Type": "application/pdf",
       "Content-Disposition": `${disposition}; filename="CVE-${cve}.pdf"`,
-      ETag: result.blob.etag,
+      ETag: result.etag,
       "Cache-Control": "private, no-cache",
     },
   })

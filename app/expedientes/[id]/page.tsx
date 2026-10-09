@@ -1,5 +1,6 @@
 import Link from "next/link"
-import { notFound } from "next/navigation"
+import { notFound, redirect } from "next/navigation"
+import { expedientesHabilitado } from "@/lib/features"
 import { desc, eq } from "drizzle-orm"
 import { ArrowLeftIcon, ExternalLinkIcon, FileTextIcon } from "lucide-react"
 import { db } from "@/lib/db"
@@ -31,6 +32,8 @@ async function getExpediente(id: number) {
 }
 
 export default async function ExpedienteDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  if (!expedientesHabilitado) redirect("/publicaciones")
+
   const { id } = await params
   const data = await getExpediente(Number(id))
   if (!data) notFound()

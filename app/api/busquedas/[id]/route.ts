@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server"
 import { obtenerEstadoEjecucion } from "@/app/actions/expedientes"
+import { expedientesHabilitado } from "@/lib/features"
 
 export const dynamic = "force-dynamic"
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  if (!expedientesHabilitado) return NextResponse.json({ error: "No encontrado" }, { status: 404 })
+
   const { id } = await params
   const ejecucionId = Number(id)
   if (!Number.isInteger(ejecucionId) || ejecucionId <= 0) {

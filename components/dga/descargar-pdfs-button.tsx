@@ -6,7 +6,31 @@ import useSWR from "swr"
 import { FileDownIcon, LoaderIcon, RotateCwIcon } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { iniciarDescargaPdfs, type EstadoDescarga } from "@/app/actions/dga"
+import type { EstadoDescarga } from "@/app/actions/dga"
+import { ErrorApi, fetchApi } from "@/lib/error-api-cliente"
+
+interface ResultadoInicio {
+  ejecucionId: number | null
+  total: number
+}
+
+function solicitarDescarga(cves?: string[]): Promise<ResultadoInicio> {
+  return fetchApi<ResultadoInicio>("/api/dga/descargas", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(cves ? { cves } : {}),
+  })
+}
+
+function mostrarError(error: unknown, titulo: string) {
+  if (error instanceof ErrorApi) {
+    console.error(`[dga] ${titulo}`, error.message, error.info)
+    toast.error(`${titulo}: ${error.message}`, { description: error.descripcion || undefined, duration: 15000 })
+  } else {
+    console.error(`[dga] ${titulo}`, error)
+    toast.error(titulo, { description: error instanceof Error ? error.message : String(error) })
+  }
+}
 
 async function fetchEstado(url: string): Promise<EstadoDescarga | null> {
   const res = await fetch(url, { cache: "no-store" })
@@ -50,11 +74,11 @@ export function DescargarPdfsButton({ pendientes, ejecucionEnCurso }: Props) {
 
   function iniciar() {
     startTransition(async () => {
-      let resultado: Awaited<ReturnType<typeof iniciarDescargaPdfs>>
+      let resultado: ResultadoInicio
       try {
-        resultado = await iniciarDescargaPdfs()
-      } catch {
-        toast.error("No se pudo iniciar la descarga. Recarga la página e intenta de nuevo.")
+        resultado = await solicitarDescarga()
+      } catch (error) {
+        mostrarError(error, "No se pudo iniciar la descarga")
         return
       }
       const { ejecucionId: id, total } = resultado
@@ -98,11 +122,11 @@ export function ReintentarPdfButton({ cve }: { cve: string }) {
       onClick={() =>
         startTransition(async () => {
           try {
-            const { ejecucionId } = await iniciarDescargaPdfs([cve])
+            const { ejecucionId } = await solicitarDescarga([cve])
             if (ejecucionId) toast.info(`Reintentando CVE ${cve} en segundo plano.`)
             router.refresh()
-          } catch {
-            toast.error("No se pudo reintentar. Recarga la página e intenta de nuevo.")
+          } catch (error) {
+            mostrarError(error, `No se pudo reintentar ${cve}`)
           }
         })
       }
