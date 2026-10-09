@@ -6,7 +6,39 @@ import useSWR from "swr"
 import { FileDownIcon, LoaderIcon, RotateCwIcon } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { iniciarDescargaPdfs, type EstadoDescarga } from "@/app/actions/dga"
+import type { EstadoDescarga } from "@/app/actions/dga"
+
+interface ResultadoInicio {
+  ejecucionId: number | null
+  total: number
+}
+
+function describirErrorHttp(status: number): string {
+  if (status === 401 || status === 403) return `Acceso denegado por el servidor (${status}).`
+  if (status === 404) return "La ruta /api/dga/descargas no existe en el servidor (404). Verifica que el build esté actualizado."
+  if (status === 502 || status === 503) return `El servidor de la aplicación no responde (${status}). Revisa que el proceso Node esté corriendo.`
+  if (status === 504) return "El proxy cortó la petición por tiempo de espera (504). Aumenta proxy_read_timeout."
+  return `El servidor respondió con error ${status}.`
+}
+
+async function solicitarDescarga(cves?: string[]): Promise<ResultadoInicio> {
+  let res: Response
+  try {
+    res = await fetch("/api/dga/descargas", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(cves ? { cves } : {}),
+      cache: "no-store",
+    })
+  } catch {
+    throw new Error("Sin conexión con el servidor. Verifica la red o que la aplicación esté levantada.")
+  }
+
+  const data = await res.json().catch(() => null)
+  if (!res.ok) throw new Error(data?.error ?? describirErrorHttp(res.status))
+  if (!data) throw new Error("El servidor devolvió una respuesta no válida (no es JSON). Revisa el proxy o los logs.")
+  return data as ResultadoInicio
+}
 
 async function fetchEstado(url: string): Promise<EstadoDescarga | null> {
   const res = await fetch(url, { cache: "no-store" })
@@ -50,11 +82,11 @@ export function DescargarPdfsButton({ pendientes, ejecucionEnCurso }: Props) {
 
   function iniciar() {
     startTransition(async () => {
-      let resultado: Awaited<ReturnType<typeof iniciarDescargaPdfs>>
+      let resultado: ResultadoInicio
       try {
-        resultado = await iniciarDescargaPdfs()
-      } catch {
-        toast.error("No se pudo iniciar la descarga. Recarga la página e intenta de nuevo.")
+        resultado = await solicitarDescarga()
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "No se pudo iniciar la descarga.")
         return
       }
       const { ejecucionId: id, total } = resultado
@@ -98,11 +130,11 @@ export function ReintentarPdfButton({ cve }: { cve: string }) {
       onClick={() =>
         startTransition(async () => {
           try {
-            const { ejecucionId } = await iniciarDescargaPdfs([cve])
+            const { ejecucionId } = await solicitarDescarga([cve])
             if (ejecucionId) toast.info(`Reintentando CVE ${cve} en segundo plano.`)
             router.refresh()
-          } catch {
-            toast.error("No se pudo reintentar. Recarga la página e intenta de nuevo.")
+          } catch (error) {
+            toast.error(error instanceof Error ? error.message : "No se pudo reintentar.")
           }
         })
       }
