@@ -7,37 +7,29 @@ import { FileDownIcon, LoaderIcon, RotateCwIcon } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import type { EstadoDescarga } from "@/app/actions/dga"
+import { ErrorApi, fetchApi } from "@/lib/error-api-cliente"
 
 interface ResultadoInicio {
   ejecucionId: number | null
   total: number
 }
 
-function describirErrorHttp(status: number): string {
-  if (status === 401 || status === 403) return `Acceso denegado por el servidor (${status}).`
-  if (status === 404) return "La ruta /api/dga/descargas no existe en el servidor (404). Verifica que el build esté actualizado."
-  if (status === 502 || status === 503) return `El servidor de la aplicación no responde (${status}). Revisa que el proceso Node esté corriendo.`
-  if (status === 504) return "El proxy cortó la petición por tiempo de espera (504). Aumenta proxy_read_timeout."
-  return `El servidor respondió con error ${status}.`
+function solicitarDescarga(cves?: string[]): Promise<ResultadoInicio> {
+  return fetchApi<ResultadoInicio>("/api/dga/descargas", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(cves ? { cves } : {}),
+  })
 }
 
-async function solicitarDescarga(cves?: string[]): Promise<ResultadoInicio> {
-  let res: Response
-  try {
-    res = await fetch("/api/dga/descargas", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(cves ? { cves } : {}),
-      cache: "no-store",
-    })
-  } catch {
-    throw new Error("Sin conexión con el servidor. Verifica la red o que la aplicación esté levantada.")
+function mostrarError(error: unknown, titulo: string) {
+  if (error instanceof ErrorApi) {
+    console.error(`[dga] ${titulo}`, error.message, error.info)
+    toast.error(`${titulo}: ${error.message}`, { description: error.descripcion || undefined, duration: 15000 })
+  } else {
+    console.error(`[dga] ${titulo}`, error)
+    toast.error(titulo, { description: error instanceof Error ? error.message : String(error) })
   }
-
-  const data = await res.json().catch(() => null)
-  if (!res.ok) throw new Error(data?.error ?? describirErrorHttp(res.status))
-  if (!data) throw new Error("El servidor devolvió una respuesta no válida (no es JSON). Revisa el proxy o los logs.")
-  return data as ResultadoInicio
 }
 
 async function fetchEstado(url: string): Promise<EstadoDescarga | null> {
@@ -86,7 +78,7 @@ export function DescargarPdfsButton({ pendientes, ejecucionEnCurso }: Props) {
       try {
         resultado = await solicitarDescarga()
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "No se pudo iniciar la descarga.")
+        mostrarError(error, "No se pudo iniciar la descarga")
         return
       }
       const { ejecucionId: id, total } = resultado
@@ -134,7 +126,7 @@ export function ReintentarPdfButton({ cve }: { cve: string }) {
             if (ejecucionId) toast.info(`Reintentando CVE ${cve} en segundo plano.`)
             router.refresh()
           } catch (error) {
-            toast.error(error instanceof Error ? error.message : "No se pudo reintentar.")
+            mostrarError(error, `No se pudo reintentar ${cve}`)
           }
         })
       }

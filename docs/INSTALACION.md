@@ -345,6 +345,10 @@ PORT=3000
 HOSTNAME=127.0.0.1
 TZ=America/Santiago
 NEXT_TELEMETRY_DISABLED=1
+
+# --- Logs (ver §21.1) ---
+LOG_LEVEL=info
+# LOG_FORMAT=json
 ```
 
 Proteger el archivo (contiene la clave de la base):
@@ -366,6 +370,9 @@ sudo chmod 640 /etc/diario-oficial/diario-oficial.env
 | `HOSTNAME` | No | `0.0.0.0` | Usa `127.0.0.1` cuando hay Nginx delante, para que la aplicación no quede expuesta directamente. |
 | `TZ` | Recomendada | Zona del sistema | `America/Santiago`. |
 | `BLOB_READ_WRITE_TOKEN` | No | — | **No definirla** en una instalación propia. Si existe y no se fija `STORAGE_DRIVER=local`, los PDFs se enviarían a Vercel Blob. |
+| `LOG_LEVEL` | No | `info` | `debug`, `info`, `warn` o `error`. Usa `debug` temporalmente para diagnosticar. |
+| `LOG_FORMAT` | No | texto | `json` emite una línea JSON por evento (útil para Loki, ELK, Graylog o `jq`). |
+| `HABILITAR_EXPEDIENTES` | No | `false` | `true` muestra el módulo de expedientes (oculto por defecto). |
 
 Los PDFs se guardan como `PDF_STORAGE_DIR/diario-oficial/AAAA/MM/<CVE>.pdf`, y la ruta relativa queda registrada en la columna `documentos_cve.blob_pathname`. La aplicación siempre los entrega a través de `/api/dga/pdf/<CVE>`, nunca como archivos estáticos.
 
@@ -594,6 +601,7 @@ No abras los puertos 3000 (aplicación) ni 5432 (PostgreSQL).
 Marca cada punto:
 
 - [ ] `sudo systemctl status diario-oficial` muestra **active (running)**.
+- [ ] `curl -s http://127.0.0.1:3000/api/salud` responde `"ok":true` (base de datos, tablas y almacenamiento). Ver §21.2.
 - [ ] `https://diario-oficial.midominio.cl/` carga el panel de expedientes (0 expedientes en una instalación nueva).
 - [ ] `/publicaciones` carga con los contadores en 0.
 - [ ] `/publicaciones/reglas` muestra las **14 reglas** iniciales.
@@ -784,6 +792,117 @@ Funciona en Windows Server 2019/2022 y Windows 10/11. Las diferencias con Linux:
 
 Revisa siempre primero los logs: `sudo journalctl -u diario-oficial -n 200 --no-pager`.
 
+### 21.1 Cómo leer un error de la aplicación
+
+Cuando algo falla, la pantalla muestra un mensaje con tres partes:
+
+```
+No se pudo iniciar la descarga: Sin permisos para escribir en /var/lib/diario-oficial/pdfs.
+ALMACENAMIENTO_PERMISOS · HTTP 500 · ref 7f3a9c21b0
+Da permisos al usuario del proceso: chown -R <usuario> <PDF_STORAGE_DIR>.
+```
+
+- **Código** (`ALMACENAMIENTO_PERMISOS`): la causa, ya clasificada. Búscalo en la tabla §21.3.
+- **HTTP**: el estado con que respondió el servidor.
+- **ref**: identificador único de esa petición. Con él encuentras la traza completa en el log:
+
+```bash
+sudo journalctl -u diario-oficial --since "1 hour ago" | grep 7f3a9c21b0
+```
+
+En el diálogo de importación, **Detalle técnico** muestra la cadena completa de errores (error original y sus causas). La consola del navegador (F12) también la registra con el prefijo `[dga]` o `[importar-dga]`.
+
+**Formato del log.** Cada evento es una línea con hora, nivel, módulo, evento y contexto:
+
+```
+2026-10-09T15:02:11.482Z INFO  [descarga] sumario_leido ejecucion=12 fecha=2026-05-15 publicaciones=184 conPdf=180 ms=8421
+2026-10-09T15:02:12.031Z INFO  [descarga] pdf_descargado ejecucion=12 fecha=2026-05-15 cve=2654321 kb=161 ms=540
+2026-10-09T15:02:40.200Z ERROR [api-descargas] error_al_iniciar req=7f3a9c21b0 codigo=ALMACENAMIENTO_PERMISOS ...
+```
+
+Eventos principales:
+
+| Módulo | Evento | Qué significa |
+|---|---|---|
+| `api-importar` | `recibido` / `importado` | Archivo recibido (nombre, tamaño) y resumen de la importación (registros, DGA, nuevos, actualizados, ms). |
+| `api-importar` | `cuerpo_invalido`, `sin_archivo`, `archivo_grande`, `excel_rechazado` | La subida llegó cortada, sin archivo, demasiado grande, o el Excel no tiene el formato esperado. |
+| `api-descargas` | `solicitud` / `iniciada` / `error_al_iniciar` | Se pidió una descarga, se creó la ejecución, o no se pudo crear (con código). |
+| `descarga` | `inicio` / `fecha_inicio` / `fin` | Inicio de la ejecución, inicio de cada fecha, y resumen final (descargados, no disponibles, errores). |
+| `descarga` | `ejecucion_fallida` | La ejecución completa se cortó por un error (se marca como fallida). |
+| `descarga` | `sumario_leido` | Se leyó el sumario de una fecha: cuántas publicaciones y cuántas con PDF. |
+| `descarga` | `cve_no_en_sumario` | El CVE no aparece en el sumario de su fecha (queda **no disponible**). |
+| `descarga` | `validacion_fallida` | El enlace no corresponde al CVE o a la fecha esperada. |
+| `descarga` | `pdf_descargado` / `pdf_error` | Resultado por CVE, con tamaño, destino, duración e intento. |
+| `descarga` | `sesion_o_sumario_fallido` | No se pudo abrir Chromium o leer el sumario; todos los CVE de esa fecha quedan con error. |
+
+**Más detalle.** Pon `LOG_LEVEL=debug` en el `.env` y reinicia (`sudo systemctl restart diario-oficial`). Vuelve a `info` al terminar, porque `debug` genera mucho volumen.
+
+**Logs en JSON.** Con `LOG_FORMAT=json` cada línea es un objeto JSON y se puede filtrar con `jq`:
+
+```bash
+sudo journalctl -u diario-oficial -o cat --since today | jq -c 'select(.nivel=="error")'
+```
+
+### 21.2 Chequeo de salud: `/api/salud`
+
+Revisa en una sola llamada la base de datos, las tablas requeridas y el almacenamiento de PDFs:
+
+```bash
+curl -s http://127.0.0.1:3000/api/salud | jq
+```
+
+```json
+{
+  "ok": true,
+  "node": "v22.x",
+  "chequeos": {
+    "baseDatos":      { "ok": true, "ms": 4,  "detalle": "PostgreSQL 16.4" },
+    "tablas":         { "ok": true, "ms": 3,  "detalle": "6 tablas presentes" },
+    "almacenamiento": { "ok": true, "ms": 1,  "detalle": "Disco local: /var/lib/diario-oficial/pdfs (escritura OK)" }
+  }
+}
+```
+
+Si algo falla, responde HTTP 503 con `"ok": false`, y el chequeo afectado trae `codigo` y `sugerencia`. Úsalo:
+
+- **Después de instalar o actualizar**, antes de probar la interfaz.
+- **Cuando aparezca un error genérico**: casi siempre la causa es base de datos, tablas faltantes o permisos de la carpeta de PDFs, y este chequeo lo dice directamente.
+- **Para monitoreo** (Zabbix, Uptime Kuma, Nagios): alerta si el HTTP no es 200.
+
+> El chequeo no prueba Chromium, porque abrirlo tarda varios segundos. Para eso usa la prueba §11.3.
+
+### 21.3 Códigos de error
+
+| Código | Causa | Qué hacer |
+|---|---|---|
+| `CONFIG_DATABASE_URL` | `DATABASE_URL` no definida | Agrégala al `.env` y reinicia. |
+| `DB_SIN_CONEXION` | PostgreSQL detenido o host/puerto incorrectos | `sudo systemctl start postgresql`; revisa `DATABASE_URL`. |
+| `DB_AUTENTICACION` | Usuario o clave rechazados | Corrige la clave en `DATABASE_URL` o en PostgreSQL; revisa `pg_hba.conf`. |
+| `DB_NO_EXISTE` | La base no existe | Créala (§6.2) y ejecuta los scripts (§9). |
+| `DB_TABLA_FALTANTE` | Falta una tabla | Ejecuta los scripts de `scripts/` en orden (§9). |
+| `DB_COLUMNA_FALTANTE` | Base desactualizada respecto al código | Ejecuta los scripts nuevos de `scripts/` (§19, paso 3). |
+| `DB_PERMISOS` | El usuario no tiene permisos sobre las tablas | `GRANT ALL ON ALL TABLES IN SCHEMA public TO diario;` y lo mismo con `SEQUENCES`. |
+| `DB_SSL` | Configuración SSL incompatible | En red interna: `?sslmode=disable`; con base remota: `?sslmode=require`. |
+| `DB_DEMASIADAS_CONEXIONES` | PostgreSQL llegó a `max_connections` | Sube el límite o reduce las instancias. |
+| `DNS` | No se resuelve un nombre de host | Revisa el DNS del servidor y el acceso a `www.diariooficial.interior.gob.cl`. |
+| `TIEMPO_AGOTADO` | Conexión de red sin respuesta | Revisa el firewall o proxy de salida (§21, proxy corporativo). |
+| `CONEXION_RECHAZADA` | Un servicio de destino no escucha | Verifica que esté levantado. |
+| `ALMACENAMIENTO_PERMISOS` | No se puede escribir en `PDF_STORAGE_DIR` | `sudo chown -R diario:diario /var/lib/diario-oficial`; revisa `ReadWritePaths` (§12). |
+| `DISCO_LLENO` | Sin espacio en disco | Libera espacio o mueve `PDF_STORAGE_DIR` a otro volumen. |
+| `DISCO_SOLO_LECTURA` | La carpeta es de solo lectura | Usa otra carpeta o corrige el montaje / `ProtectSystem`. |
+| `NAVEGADOR_LIBRERIAS` | A Chromium le faltan librerías `.so` | Instala la lista de §7.1. |
+| `NAVEGADOR_NO_INICIA` | No se encuentra o no arranca Chromium | §7.2: define `CHROMIUM_EXECUTABLE_PATH`. |
+| `NAVEGADOR_CERRADO` | Chromium murió (normalmente por falta de RAM) | Más RAM o swap; revisa `dmesg` buscando "Out of memory". |
+| `BLOB_TOKEN` | Se intentó usar Vercel Blob sin configurarlo | Fija `STORAGE_DRIVER=local` y `PDF_STORAGE_DIR`. |
+| `SITIO_BLOQUEO` | El Diario Oficial respondió 403/429 | Espera y reintenta; verifica que la IP no esté bloqueada. |
+| `SUBIDA_INVALIDA` | El archivo llegó incompleto o cortado | Revisa `client_max_body_size` y los tiempos de espera de Nginx (§13.2). |
+| `RED` | El navegador no pudo contactar al servidor | La aplicación está caída, o hay un problema de red o VPN entre el usuario y el servidor. |
+| `PROXY` | Respondió el proxy (HTML) y no la aplicación | Mira el HTTP: 413 tamaño, 502 aplicación caída, 504 tiempo agotado. Revisa `/var/log/nginx/error.log`. |
+| `RESPUESTA_INVALIDA` | La aplicación respondió algo que no es JSON válido | Busca la `ref` en el log. |
+| `ERROR_INTERNO` | Error no clasificado | Busca la `ref` en el log y revisa la traza completa. |
+
+### 21.4 Síntomas frecuentes
+
 | Síntoma | Causa probable | Solución |
 |---|---|---|
 | El servicio no arranca, log: `Could not find a production build` | No se compiló | Ejecuta el paso §11.1. |
@@ -840,6 +959,9 @@ Para pnpm: `sudo -u diario -H corepack pnpm config set proxy http://proxy.midomi
 | Ver estado | `sudo systemctl status diario-oficial` |
 | Reiniciar | `sudo systemctl restart diario-oficial` |
 | Ver logs en vivo | `sudo journalctl -u diario-oficial -f` |
+| Solo errores de hoy | `sudo journalctl -u diario-oficial --since today \| grep -E ' (ERROR\|WARN) '` |
+| Buscar una referencia | `sudo journalctl -u diario-oficial \| grep <ref>` |
+| Chequeo de salud | `curl -s http://127.0.0.1:3000/api/salud` |
 | Respaldar ahora | `sudo /usr/local/bin/respaldo-diario-oficial.sh` |
 | Entrar a la base | `sudo -u postgres psql diario_oficial` |
 | Espacio usado por PDFs | `sudo du -sh /var/lib/diario-oficial/pdfs` |

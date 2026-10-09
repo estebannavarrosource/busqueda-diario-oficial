@@ -8,6 +8,8 @@ import { auditoriaDocumentos, documentosCve, ejecucionesDescarga, reglasDga } fr
 import { compilarPatron } from "@/lib/dga/clasificacion"
 import { cerrarEjecucionesHuerfanas, documentosPorProcesar, ejecutarDescarga } from "@/lib/dga/descarga"
 import { reclasificarTodo } from "@/lib/dga/import"
+import { crearLogger } from "@/lib/logger"
+import { diagnosticarError, resumenError } from "@/lib/errores"
 
 export interface EstadoDescarga {
   id: number
@@ -53,14 +55,17 @@ export async function iniciarDescargaPdfs(cves?: string[]): Promise<{ ejecucionI
     .returning({ id: ejecucionesDescarga.id })
 
   after(async () => {
-    try {
-      await ejecutarDescarga(ejecucion.id, documentos)
-    } catch (error) {
-      await db
-        .update(ejecucionesDescarga)
-        .set({ estado: "fallida", fechaFin: new Date(), mensaje: error instanceof Error ? error.message : String(error) })
-        .where(eq(ejecucionesDescarga.id, ejecucion.id))
-    }
+  const log = crearLogger("descarga", { ejecucion: ejecucion.id })
+  try {
+  await ejecutarDescarga(ejecucion.id, documentos)
+  } catch (error) {
+  log.error("ejecucion_fallida", { codigo: diagnosticarError(error).codigo }, error)
+  await db
+  .update(ejecucionesDescarga)
+  .set({ estado: "fallida", fechaFin: new Date(), mensaje: resumenError(error) })
+  .where(eq(ejecucionesDescarga.id, ejecucion.id))
+  .catch((e) => log.error("no_se_pudo_marcar_fallida", {}, e))
+  }
   })
 
   return { ejecucionId: ejecucion.id, total: documentos.length }

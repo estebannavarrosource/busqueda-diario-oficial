@@ -16,48 +16,42 @@ import {
 } from "@/components/ui/dialog"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import type { ResumenImportacionDga } from "@/lib/dga/import"
+import { ErrorApi, fetchApi } from "@/lib/error-api-cliente"
 
-function describirErrorHttp(status: number): string {
-  if (status === 413) return "Archivo rechazado por tamaño (HTTP 413). Revisa el límite del proxy, p. ej. client_max_body_size en nginx."
-  if (status === 502) return "El servidor de la aplicación no respondió (HTTP 502). Puede haberse caído o reiniciado; revisa sus logs."
-  if (status === 504) return "Tiempo de espera agotado en el proxy (HTTP 504). Sube proxy_read_timeout o importa archivos más pequeños."
-  if (status === 401 || status === 403) return `Acceso denegado (HTTP ${status}). Revisa la autenticación o las reglas del proxy.`
-  return `Respuesta inesperada del servidor (HTTP ${status}). Revisa los logs del servidor.`
-}
+const VACIO = { total: 0, dga: 0, nuevos: 0, actualizados: 0, documentosNuevos: 0 }
+
+type ResultadoArchivo = ResumenImportacionDga & { descripcion?: string; detalle?: string }
 
 export function ImportDgaDialog() {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [files, setFiles] = useState<File[]>([])
-  const [resumenes, setResumenes] = useState<ResumenImportacionDga[]>([])
+  const [resumenes, setResumenes] = useState<ResultadoArchivo[]>([])
   const [isPending, startTransition] = useTransition()
   const inputRef = useRef<HTMLInputElement>(null)
 
   function handleSubmit() {
     if (files.length === 0) return
     startTransition(async () => {
-      const resultados: ResumenImportacionDga[] = []
+      const resultados: ResultadoArchivo[] = []
       for (const file of files) {
         const formData = new FormData()
         formData.set("file", file)
-  const vacio = { total: 0, dga: 0, nuevos: 0, actualizados: 0, documentosNuevos: 0 }
-  let response: Response
-  try {
-  response = await fetch("/api/dga/importar", { method: "POST", body: formData })
-  } catch {
-  resultados.push({ archivo: file.name, error: "Sin conexión con el servidor (la petición no llegó o se cortó).", ...vacio })
-  setResumenes([...resultados])
-  continue
-  }
-  const esJson = response.headers.get("content-type")?.includes("application/json")
-  if (!esJson) {
-  resultados.push({ archivo: file.name, error: describirErrorHttp(response.status), ...vacio })
-  setResumenes([...resultados])
-  continue
-  }
-  const result: ResumenImportacionDga = await response.json()
-  resultados.push({ ...result, archivo: file.name })
-  if (result.error) toast.error(`${file.name}: ${result.error}`)
+        try {
+          const result = await fetchApi<ResumenImportacionDga>("/api/dga/importar", { method: "POST", body: formData })
+          resultados.push({ ...result, archivo: file.name })
+        } catch (error) {
+          const api = error instanceof ErrorApi ? error : null
+          console.error("[importar-dga]", file.name, api?.info ?? error)
+          resultados.push({
+            ...VACIO,
+            archivo: file.name,
+            error: error instanceof Error ? error.message : String(error),
+            descripcion: api?.descripcion,
+            detalle: api?.info.detalle,
+          })
+          toast.error(`${file.name}: ${error instanceof Error ? error.message : String(error)}`)
+        }
         setResumenes([...resultados])
       }
       const ok = resultados.filter((r) => !r.error)
@@ -117,10 +111,21 @@ export function ImportDgaDialog() {
             {resumenes.map((r) => (
               <Alert key={r.archivo} variant={r.error ? "destructive" : "default"}>
                 <AlertTitle className="truncate">{r.archivo}</AlertTitle>
-                <AlertDescription>
-                  {r.error
-                    ? r.error
-                    : `${r.total} registros · ${r.dga} competencia DGA · ${r.nuevos} nuevos · ${r.actualizados} actualizados · ${r.documentosNuevos} CVE por descargar`}
+                <AlertDescription className="flex flex-col gap-1">
+                  {r.error ? (
+                    <>
+                      <span>{r.error}</span>
+                      {r.descripcion && <span className="text-xs text-muted-foreground">{r.descripcion}</span>}
+                      {r.detalle && (
+                        <details className="text-xs text-muted-foreground">
+                          <summary className="cursor-pointer">Detalle técnico</summary>
+                          <code className="block break-all font-mono">{r.detalle}</code>
+                        </details>
+                      )}
+                    </>
+                  ) : (
+                    `${r.total} registros · ${r.dga} competencia DGA · ${r.nuevos} nuevos · ${r.actualizados} actualizados · ${r.documentosNuevos} CVE por descargar`
+                  )}
                 </AlertDescription>
               </Alert>
             ))}
