@@ -17,6 +17,14 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import type { ResumenImportacionDga } from "@/lib/dga/import"
 
+function describirErrorHttp(status: number): string {
+  if (status === 413) return "Archivo rechazado por tamaño (HTTP 413). Revisa el límite del proxy, p. ej. client_max_body_size en nginx."
+  if (status === 502) return "El servidor de la aplicación no respondió (HTTP 502). Puede haberse caído o reiniciado; revisa sus logs."
+  if (status === 504) return "Tiempo de espera agotado en el proxy (HTTP 504). Sube proxy_read_timeout o importa archivos más pequeños."
+  if (status === 401 || status === 403) return `Acceso denegado (HTTP ${status}). Revisa la autenticación o las reglas del proxy.`
+  return `Respuesta inesperada del servidor (HTTP ${status}). Revisa los logs del servidor.`
+}
+
 export function ImportDgaDialog() {
   const router = useRouter()
   const [open, setOpen] = useState(false)
@@ -32,14 +40,24 @@ export function ImportDgaDialog() {
       for (const file of files) {
         const formData = new FormData()
         formData.set("file", file)
-        try {
-          const response = await fetch("/api/dga/importar", { method: "POST", body: formData })
-          const result: ResumenImportacionDga = await response.json()
-          resultados.push({ ...result, archivo: file.name })
-          if (result.error) toast.error(`${file.name}: ${result.error}`)
-        } catch {
-          resultados.push({ archivo: file.name, error: "Sin conexión con el servidor", total: 0, dga: 0, nuevos: 0, actualizados: 0, documentosNuevos: 0 })
-        }
+  const vacio = { total: 0, dga: 0, nuevos: 0, actualizados: 0, documentosNuevos: 0 }
+  let response: Response
+  try {
+  response = await fetch("/api/dga/importar", { method: "POST", body: formData })
+  } catch {
+  resultados.push({ archivo: file.name, error: "Sin conexión con el servidor (la petición no llegó o se cortó).", ...vacio })
+  setResumenes([...resultados])
+  continue
+  }
+  const esJson = response.headers.get("content-type")?.includes("application/json")
+  if (!esJson) {
+  resultados.push({ archivo: file.name, error: describirErrorHttp(response.status), ...vacio })
+  setResumenes([...resultados])
+  continue
+  }
+  const result: ResumenImportacionDga = await response.json()
+  resultados.push({ ...result, archivo: file.name })
+  if (result.error) toast.error(`${file.name}: ${result.error}`)
         setResumenes([...resultados])
       }
       const ok = resultados.filter((r) => !r.error)

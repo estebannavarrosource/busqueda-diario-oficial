@@ -14,7 +14,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "El archivo supera los 50 MB." }, { status: 400 })
   }
 
-  const resumen = await importarExcelDga(file)
-  if (!resumen.error) revalidatePath("/publicaciones")
-  return NextResponse.json(resumen, { status: resumen.error ? 400 : 200 })
+  try {
+    const resumen = await importarExcelDga(file)
+    if (!resumen.error) revalidatePath("/publicaciones")
+    return NextResponse.json(resumen, { status: resumen.error ? 400 : 200 })
+  } catch (error) {
+    console.error("[importar-dga]", file.name, error)
+    const detalle = error instanceof Error ? error.message : String(error)
+    return NextResponse.json(
+      { error: `Error interno al importar: ${detalle}`, total: 0, dga: 0, nuevos: 0, actualizados: 0, documentosNuevos: 0 },
+      { status: 500 },
+    )
+  }
 }
